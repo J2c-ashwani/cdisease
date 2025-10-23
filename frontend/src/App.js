@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, Link, useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import './App.css';
@@ -30,9 +30,28 @@ const Navbar = ({ user, setUser }) => {
           {user ? (
             <div className="nav-user">
               <span data-testid="user-name">Welcome, {user.name}</span>
-              <Link to="/appointments" className="nav-btn" data-testid="appointments-link">
-                My Appointments
-              </Link>
+              
+              {/* Admin Dashboard Link */}
+              {user.user_type === 'admin' && (
+                <Link to="/admin/dashboard" className="nav-btn" data-testid="admin-dashboard-link">
+                  🔐 Admin
+                </Link>
+              )}
+              
+              {/* Professional Dashboard Link */}
+              {(user.user_type === 'professional' || user.user_type === 'coach') && (
+                <Link to="/professional/dashboard" className="nav-btn" data-testid="dashboard-link">
+                  📊 Dashboard
+                </Link>
+              )}
+              
+              {/* Patient Appointments Link */}
+              {user.user_type === 'patient' && (
+                <Link to="/appointments" className="nav-btn" data-testid="appointments-link">
+                  My Appointments
+                </Link>
+              )}
+              
               <button onClick={handleLogout} className="nav-btn" data-testid="logout-btn">
                 Logout
               </button>
@@ -162,6 +181,7 @@ const HomePage = () => {
 
 const AuthPage = ({ setUser }) => {
   const [isLogin, setIsLogin] = useState(true);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -169,6 +189,8 @@ const AuthPage = ({ setUser }) => {
     phone: '',
     user_type: 'patient'
   });
+  const [resetEmail, setResetEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -203,6 +225,96 @@ const AuthPage = ({ setUser }) => {
     }
   };
 
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await axios.post(`${API}/auth/reset-password`, {
+        email: resetEmail,
+        new_password: newPassword
+      });
+
+      setError('Password reset successfully! You can now login with your new password.');
+      setTimeout(() => {
+        setShowForgotPassword(false);
+        setResetEmail('');
+        setNewPassword('');
+        setIsLogin(true);
+        setError('');
+      }, 2000);
+    } catch (error) {
+      setError(error.response?.data?.detail || 'Password reset failed. Please check your email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Forgot Password View
+  if (showForgotPassword) {
+    return (
+      <div className="auth-page">
+        <div className="auth-container">
+          <div className="auth-card">
+            <h2>Reset Password</h2>
+            
+            {error && (
+              <div className={`error-message ${error.includes('successfully') ? 'success' : ''}`}>
+                {error}
+              </div>
+            )}
+            
+            <form onSubmit={handleResetPassword}>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                required
+              />
+              
+              <input
+                type="password"
+                placeholder="Enter new password (min 6 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength="6"
+              />
+              
+              <button type="submit" disabled={loading}>
+                {loading ? 'Resetting...' : 'Reset Password'}
+              </button>
+            </form>
+            
+            <p className="auth-switch">
+              Remember your password?{' '}
+              <button 
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setError('');
+                  setResetEmail('');
+                  setNewPassword('');
+                }}
+                className="auth-switch-btn"
+              >
+                Back to Login
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Login/Register View
   return (
     <div className="auth-page">
       <div className="auth-container">
@@ -211,7 +323,11 @@ const AuthPage = ({ setUser }) => {
             {isLogin ? 'Login to Your Account' : 'Create New Account'}
           </h2>
           
-          {error && <div className="error-message" data-testid="error-message">{error}</div>}
+          {error && (
+            <div className={`error-message ${error.includes('successful') ? 'success' : ''}`} data-testid="error-message">
+              {error}
+            </div>
+          )}
           
           <form onSubmit={handleSubmit} data-testid="auth-form">
             {!isLogin && (
@@ -265,10 +381,24 @@ const AuthPage = ({ setUser }) => {
             </button>
           </form>
           
+          {isLogin && (
+            <p className="forgot-password-link">
+              <button 
+                onClick={() => setShowForgotPassword(true)}
+                className="forgot-btn"
+              >
+                Forgot Password?
+              </button>
+            </p>
+          )}
+          
           <p className="auth-switch">
             {isLogin ? "Don't have an account? " : "Already have an account? "}
             <button 
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError('');
+              }}
               className="auth-switch-btn"
               data-testid="auth-switch-btn"
             >
@@ -1014,6 +1144,600 @@ const VideoCallPage = ({ user }) => {
     </div>
   );
 };
+// ============================================
+// PROFESSIONAL DASHBOARD
+// ============================================
+const ProfessionalDashboard = ({ user }) => {
+  const [stats, setStats] = useState(null);
+  const [appointments, setAppointments] = useState([]);
+  const [chatHistory, setChatHistory] = useState(null);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showFeeModal, setShowFeeModal] = useState(false);
+  const [newFee, setNewFee] = useState('');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    fetchDashboardData();
+  }, [user]);
+
+  const fetchDashboardData = async () => {
+    try {
+      const [statsRes, appointmentsRes] = await Promise.all([
+        axios.get(`${API}/professional/dashboard/stats`),
+        axios.get(`${API}/professional/appointments/upcoming`)
+      ]);
+      
+      setStats(statsRes.data);
+      setAppointments(appointmentsRes.data);
+      setNewFee(statsRes.data.consultation_fee);
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const viewChatHistory = async (appointmentId) => {
+    try {
+      const response = await axios.get(`${API}/professional/appointments/${appointmentId}/chat-history`);
+      setChatHistory(response.data);
+      setSelectedAppointment(appointmentId);
+    } catch (error) {
+      console.error('Failed to fetch chat history:', error);
+      alert('Failed to load chat history');
+    }
+  };
+
+  const updateConsultationFee = async () => {
+    try {
+      await axios.put(`${API}/professional/profile/fee`, {
+        consultation_fee: parseInt(newFee)
+      });
+      alert('Consultation fee updated successfully!');
+      setShowFeeModal(false);
+      fetchDashboardData();
+    } catch (error) {
+      console.error('Failed to update fee:', error);
+      alert('Failed to update consultation fee');
+    }
+  };
+
+  if (!user) {
+    return <div className="loading">Please login to continue...</div>;
+  }
+
+  if (loading) {
+    return <div className="loading" data-testid="dashboard-loading">Loading dashboard...</div>;
+  }
+
+  return (
+    <div className="professional-dashboard">
+      <div className="dashboard-container">
+        <div className="dashboard-header">
+          <h1>Professional Dashboard</h1>
+          <p>Welcome back, {stats?.professional_name}!</p>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-icon">📅</div>
+            <div className="stat-info">
+              <h3>{stats?.total_appointments || 0}</h3>
+              <p>Total Appointments</p>
+            </div>
+          </div>
+          
+          <div className="stat-card">
+            <div className="stat-icon">✅</div>
+            <div className="stat-info">
+              <h3>{stats?.completed_appointments || 0}</h3>
+              <p>Completed</p>
+            </div>
+          </div>
+          
+          <div className="stat-card">
+            <div className="stat-icon">⏰</div>
+            <div className="stat-info">
+              <h3>{stats?.upcoming_appointments || 0}</h3>
+              <p>Upcoming</p>
+            </div>
+          </div>
+          
+          <div className="stat-card earnings-card">
+            <div className="stat-icon">💰</div>
+            <div className="stat-info">
+              <h3>₹{stats?.net_earnings?.toLocaleString() || 0}</h3>
+              <p>Net Earnings</p>
+              <small>Commission: ₹{stats?.platform_commission?.toLocaleString() || 0}</small>
+            </div>
+          </div>
+        </div>
+
+        {/* This Month Earnings */}
+        <div className="earnings-summary">
+          <h2>This Month</h2>
+          <div className="earnings-details">
+            <div className="earnings-item">
+              <span>Gross Earnings:</span>
+              <strong>₹{stats?.earnings_this_month?.toLocaleString() || 0}</strong>
+            </div>
+            <div className="earnings-item">
+              <span>Platform Fee (15%):</span>
+              <strong className="commission">-₹{stats?.commission_this_month?.toLocaleString() || 0}</strong>
+            </div>
+            <div className="earnings-item">
+              <span>Net Earnings:</span>
+              <strong className="net-earnings">₹{stats?.net_earnings_this_month?.toLocaleString() || 0}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Consultation Fee */}
+        <div className="fee-section">
+          <h3>Your Consultation Fee: ₹{stats?.consultation_fee}</h3>
+          <button onClick={() => setShowFeeModal(true)} className="update-fee-btn">
+            Update Fee
+          </button>
+        </div>
+
+        {/* Upcoming Appointments */}
+        <div className="appointments-section">
+          <h2>Upcoming Appointments</h2>
+          {appointments.length === 0 ? (
+            <p className="no-data">No upcoming appointments</p>
+          ) : (
+            <div className="appointments-list">
+              {appointments.map(apt => (
+                <div key={apt.id} className="appointment-item">
+                  <div className="apt-info">
+                    <h4>{apt.patient_name || 'Patient'}</h4>
+                    <p>📅 {new Date(apt.scheduled_time).toLocaleDateString()}</p>
+                    <p>⏰ {new Date(apt.scheduled_time).toLocaleTimeString()}</p>
+                    <p>💰 ₹{apt.consultation_fee}</p>
+                  </div>
+                  <div className="apt-actions">
+                    <button 
+                      onClick={() => viewChatHistory(apt.id)}
+                      className="view-history-btn"
+                    >
+                      View Medical History
+                    </button>
+                    {apt.meeting_link && (
+                      <a 
+                        href={apt.meeting_link} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="join-meeting-btn"
+                      >
+                        Join Meeting
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Chat History Modal */}
+        {chatHistory && (
+          <div className="modal-overlay" onClick={() => setChatHistory(null)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Patient Medical History</h2>
+                <button onClick={() => setChatHistory(null)} className="close-btn">×</button>
+              </div>
+              <div className="modal-body">
+                <div className="patient-info">
+                  <p><strong>Patient:</strong> {chatHistory.patient_name}</p>
+                  <p><strong>Email:</strong> {chatHistory.patient_email}</p>
+                  <p><strong>Session Date:</strong> {new Date(chatHistory.started_at).toLocaleString()}</p>
+                </div>
+                
+                <h3>Medical Questionnaire Responses</h3>
+                <div className="chat-answers">
+                  {chatHistory.answers?.map((answer, index) => (
+                    <div key={index} className="answer-item">
+                      <p className="question"><strong>Q{index + 1}:</strong> {answer.question}</p>
+                      <p className="answer">✓ {answer.answer}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Update Fee Modal */}
+        {showFeeModal && (
+          <div className="modal-overlay" onClick={() => setShowFeeModal(false)}>
+            <div className="modal-content small" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Update Consultation Fee</h2>
+                <button onClick={() => setShowFeeModal(false)} className="close-btn">×</button>
+              </div>
+              <div className="modal-body">
+                <label>New Consultation Fee (₹)</label>
+                <input
+                  type="number"
+                  value={newFee}
+                  onChange={(e) => setNewFee(e.target.value)}
+                  min="100"
+                  max="10000"
+                  placeholder="Enter fee"
+                />
+                <small>Platform commission: 15% | Net: ₹{(newFee * 0.85).toFixed(0)}</small>
+                <button onClick={updateConsultationFee} className="submit-btn">
+                  Update Fee
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+// ============================================
+// ADMIN DASHBOARD
+// ============================================
+const AdminDashboard = ({ user }) => {
+  const [analytics, setAnalytics] = useState(null);
+  const [professionals, setProfessionals] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  // Wrap fetchDashboardData with useCallback
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      const analyticsRes = await axios.get(`${API}/admin/analytics/overview`, config);
+      setAnalytics(analyticsRes.data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to fetch admin data:', error);
+      if (error.response?.status === 403) {
+        alert('Admin access required');
+        navigate('/');
+      }
+      setLoading(false);
+    }
+  }, [navigate]);
+
+  // Wrap fetchTabData with useCallback
+  const fetchTabData = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      if (activeTab === 'professionals') {
+        const profRes = await axios.get(`${API}/admin/professionals`, config);
+        setProfessionals(profRes.data.professionals || []);
+      } else if (activeTab === 'appointments') {
+        const aptRes = await axios.get(`${API}/admin/appointments?limit=100`, config);
+        setAppointments(aptRes.data.appointments || []);
+      } else if (activeTab === 'users') {
+        const usersRes = await axios.get(`${API}/admin/users?limit=100`, config);
+        setUsers(usersRes.data.users || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tab data:', error);
+    }
+  }, [activeTab]);
+
+  // Update useEffect to include fetchDashboardData in dependencies
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    fetchDashboardData();
+  }, [user, navigate, fetchDashboardData]);
+
+  // Update useEffect to include fetchTabData in dependencies
+  useEffect(() => {
+    if (user && !loading && activeTab !== 'overview') {
+      fetchTabData();
+    }
+  }, [activeTab, user, loading, fetchTabData]);
+
+  const updateProfessionalStatus = async (professionalId, status) => {
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      await axios.put(`${API}/admin/professionals/${professionalId}/status?status=${status}`, {}, config);
+      alert(`Professional ${status} successfully!`);
+      fetchTabData();
+    } catch (error) {
+      console.error('Failed to update status:', error);
+      alert('Failed to update professional status');
+    }
+  };
+
+  if (!user) {
+    return <div className="loading">Please login to continue...</div>;
+  }
+
+  if (loading) {
+    return <div className="loading">Loading admin dashboard...</div>;
+  }
+
+  return (
+    <div className="admin-dashboard">
+      <div className="dashboard-container">
+        <div className="dashboard-header">
+          <h1>Admin Dashboard</h1>
+          <p>Platform Management & Analytics</p>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="admin-tabs">
+          <button 
+            className={activeTab === 'overview' ? 'active' : ''}
+            onClick={() => setActiveTab('overview')}
+          >
+            📊 Overview
+          </button>
+          <button 
+            className={activeTab === 'professionals' ? 'active' : ''}
+            onClick={() => setActiveTab('professionals')}
+          >
+            👨‍⚕️ Professionals
+          </button>
+          <button 
+            className={activeTab === 'appointments' ? 'active' : ''}
+            onClick={() => setActiveTab('appointments')}
+          >
+            📅 Appointments
+          </button>
+          <button 
+            className={activeTab === 'users' ? 'active' : ''}
+            onClick={() => setActiveTab('users')}
+          >
+            👥 Users
+          </button>
+        </div>
+
+        {/* Overview Tab */}
+        {activeTab === 'overview' && analytics && (
+          <div className="overview-content">
+            <div className="stats-grid">
+              <div className="stat-card blue">
+                <div className="stat-icon">👥</div>
+                <div className="stat-info">
+                  <h3>{analytics.total_patients}</h3>
+                  <p>Total Patients</p>
+                </div>
+              </div>
+              
+              <div className="stat-card green">
+                <div className="stat-icon">👨‍⚕️</div>
+                <div className="stat-info">
+                  <h3>{analytics.total_professionals}</h3>
+                  <p>Total Professionals</p>
+                </div>
+              </div>
+              
+              <div className="stat-card purple">
+                <div className="stat-icon">📅</div>
+                <div className="stat-info">
+                  <h3>{analytics.total_appointments}</h3>
+                  <p>Total Appointments</p>
+                  <small>{analytics.completed_appointments} completed</small>
+                </div>
+              </div>
+              
+              <div className="stat-card orange">
+                <div className="stat-icon">💰</div>
+                <div className="stat-info">
+                  <h3>₹{analytics.total_revenue?.toLocaleString()}</h3>
+                  <p>Total Revenue</p>
+                  <small>Commission: ₹{analytics.platform_commission?.toLocaleString()}</small>
+                </div>
+              </div>
+            </div>
+
+            <div className="monthly-stats">
+              <h2>This Month</h2>
+              <div className="monthly-grid">
+                <div className="monthly-item">
+                  <span>Appointments</span>
+                  <strong>{analytics.appointments_this_month}</strong>
+                </div>
+                <div className="monthly-item">
+                  <span>Revenue</span>
+                  <strong>₹{analytics.revenue_this_month?.toLocaleString()}</strong>
+                </div>
+                <div className="monthly-item">
+                  <span>Platform Commission (15%)</span>
+                  <strong>₹{((analytics.revenue_this_month || 0) * 0.15)?.toFixed(0)}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Professionals Tab */}
+        {activeTab === 'professionals' && (
+          <div className="professionals-content">
+            <h2>Professional Management</h2>
+            {professionals.length === 0 ? (
+              <p className="no-data">No professionals found</p>
+            ) : (
+              <div className="table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Qualification</th>
+                      <th>Experience</th>
+                      <th>Fee</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {professionals.map(prof => (
+                      <tr key={prof.id}>
+                        <td>{prof.name}</td>
+                        <td>{prof.email}</td>
+                        <td>{prof.qualification}</td>
+                        <td>{prof.years_experience} years</td>
+                        <td>₹{prof.consultation_fee}</td>
+                        <td>
+                          <span className={`status-badge ${prof.status}`}>
+                            {prof.status}
+                          </span>
+                        </td>
+                        <td className="actions">
+                          {prof.status === 'pending' && (
+                            <>
+                              <button 
+                                onClick={() => updateProfessionalStatus(prof.id, 'approved')}
+                                className="approve-btn"
+                              >
+                                ✓ Approve
+                              </button>
+                              <button 
+                                onClick={() => updateProfessionalStatus(prof.id, 'rejected')}
+                                className="reject-btn"
+                              >
+                                ✗ Reject
+                              </button>
+                            </>
+                          )}
+                          {prof.status === 'approved' && (
+                            <button 
+                              onClick={() => updateProfessionalStatus(prof.id, 'rejected')}
+                              className="reject-btn"
+                            >
+                              Suspend
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Appointments Tab */}
+        {activeTab === 'appointments' && (
+          <div className="appointments-content">
+            <h2>All Appointments</h2>
+            {appointments.length === 0 ? (
+              <p className="no-data">No appointments found</p>
+            ) : (
+              <div className="table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Date & Time</th>
+                      <th>Professional</th>
+                      <th>Patient</th>
+                      <th>Fee</th>
+                      <th>Status</th>
+                      <th>Payment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {appointments.map(apt => (
+                      <tr key={apt.id}>
+                        <td>
+                          {new Date(apt.scheduled_time).toLocaleDateString()}<br/>
+                          <small>{new Date(apt.scheduled_time).toLocaleTimeString()}</small>
+                        </td>
+                        <td>{apt.professional_name || 'N/A'}</td>
+                        <td>Patient #{apt.user_id?.substring(0, 8)}</td>
+                        <td>₹{apt.consultation_fee}</td>
+                        <td>
+                          <span className={`status-badge ${apt.status}`}>
+                            {apt.status}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`status-badge ${apt.payment_status}`}>
+                            {apt.payment_status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Users Tab */}
+        {activeTab === 'users' && (
+          <div className="users-content">
+            <h2>All Users</h2>
+            {users.length === 0 ? (
+              <p className="no-data">No users found</p>
+            ) : (
+              <div className="table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Phone</th>
+                      <th>User Type</th>
+                      <th>Status</th>
+                      <th>Joined</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map(usr => (
+                      <tr key={usr.id}>
+                        <td>{usr.name}</td>
+                        <td>{usr.email}</td>
+                        <td>{usr.phone || 'N/A'}</td>
+                        <td>
+                          <span className={`role-badge ${usr.user_type}`}>
+                            {usr.user_type}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={usr.is_active ? 'active-badge' : 'inactive-badge'}>
+                            {usr.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td>{new Date(usr.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 function App() {
   const [user, setUser] = useState(null);
@@ -1035,14 +1759,18 @@ function App() {
           <Navbar user={user} setUser={setUser} />
           <main className="main-content">
             <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/auth" element={<AuthPage setUser={setUser} />} />
-              <Route path="/disease/:diseaseId" element={<DiseasePage />} />
-              <Route path="/chat/:professionalId" element={<ChatPage user={user} />} />
-              <Route path="/booking/:professionalId" element={<BookingPage user={user} />} />
-              <Route path="/appointments" element={<AppointmentsPage user={user} />} />
-              <Route path="/video-call/:appointmentId" element={<VideoCallPage user={user} />} />
-            </Routes>
+  <Route path="/" element={<HomePage />} />
+  <Route path="/auth" element={<AuthPage setUser={setUser} />} />
+  <Route path="/disease/:diseaseId" element={<DiseasePage />} />
+  <Route path="/chat/:professionalId" element={<ChatPage user={user} />} />
+  <Route path="/booking/:professionalId" element={<BookingPage user={user} />} />
+  <Route path="/appointments" element={<AppointmentsPage user={user} />} />
+  <Route path="/video-call/:appointmentId" element={<VideoCallPage user={user} />} />
+  
+  {/* Dashboard Routes */}
+  <Route path="/admin/dashboard" element={<AdminDashboard user={user} />} />
+  <Route path="/professional/dashboard" element={<ProfessionalDashboard user={user} />} />
+</Routes>
           </main>
         </BrowserRouter>
       </div>
