@@ -1270,6 +1270,17 @@ body {
   flex-direction: column;
 }
 
+.chat-header {
+  padding: 1rem;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.chat-header h3 {
+  color: #1f2937;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
 
 .chat-messages {
   flex: 1;

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, Link, useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+const API = `${BACKEND_URL}/api/v1`;
 
 // Auth Context
 const AuthContext = React.createContext();
@@ -58,17 +58,17 @@ const HomePage = () => {
 
   const fetchDiseases = async () => {
     try {
-      const response = await axios.get(`${API}/diseases`);
+      const response = await axios.get(`${API}/conditions/`);
       setDiseases(response.data);
     } catch (error) {
-      console.error('Failed to fetch diseases:', error);
+      console.error('Failed to fetch conditions:', error);
     } finally {
       setLoading(false);
     }
   };
 
   if (loading) {
-    return <div className="loading" data-testid="loading">Loading diseases...</div>;
+    return <div className="loading" data-testid="loading">Loading conditions...</div>;
   }
 
   return (
@@ -293,13 +293,13 @@ const DiseasePage = () => {
 
   const fetchDiseaseAndProfessionals = async () => {
     try {
-      const [diseaseRes, professionalsRes] = await Promise.all([
-        axios.get(`${API}/diseases/${diseaseId}`),
-        axios.get(`${API}/diseases/${diseaseId}/professionals`)
+      const [conditionRes, coachesRes] = await Promise.all([
+        axios.get(`${API}/conditions/${diseaseId}`),
+        axios.get(`${API}/conditions/${diseaseId}/coaches/`)
       ]);
       
-      setDisease(diseaseRes.data);
-      setProfessionals(professionalsRes.data);
+      setDisease(conditionRes.data);
+      setProfessionals(coachesRes.data);
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -312,7 +312,7 @@ const DiseasePage = () => {
   }
 
   if (!disease) {
-    return <div className="error">Disease not found</div>;
+    return <div className="error">Condition not found</div>;
   }
 
   return (
@@ -365,26 +365,46 @@ const DiseasePage = () => {
   );
 };
 
+// ============================================
+// WHATSAPP-STYLE MFINE CHAT COMPONENT
+// ============================================
 const ChatPage = ({ user }) => {
   const { professionalId } = useParams();
   const [searchParams] = useSearchParams();
   const diseaseId = searchParams.get('disease');
   
   const [sessionId, setSessionId] = useState(null);
-  const [questions, setQuestions] = useState([]);
+  const [allQuestions, setAllQuestions] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [showTyping, setShowTyping] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const [loading, setLoading] = useState(true);
   const [chatCompleted, setChatCompleted] = useState(false);
+  const messagesEndRef = useRef(null);
+  const hasInitialized = useRef(false); // ✅ USE REF INSTEAD OF STATE
   const navigate = useNavigate();
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, showTyping, showOptions]);
 
   useEffect(() => {
     if (!user) {
       navigate('/auth');
       return;
     }
-    startChatSession();
-  }, [user, professionalId, diseaseId]);
+    
+    // ✅ Prevent duplicate with ref - only runs once
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      startChatSession();
+    }
+  }, [user, professionalId, diseaseId, navigate]);
 
   const startChatSession = async () => {
     try {
@@ -393,34 +413,91 @@ const ChatPage = ({ user }) => {
       });
       
       setSessionId(response.data.session_id);
-      setQuestions(response.data.questions);
+      setAllQuestions(response.data.questions);
+      setCurrentQuestionIndex(0);
+      
+      // Show first question after a delay
+      setTimeout(() => {
+        showNextQuestion(response.data.questions, 0);
+      }, 800);
     } catch (error) {
       console.error('Failed to start chat session:', error);
+      alert('Failed to start chat. Please try again.');
+      navigate(-1);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAnswer = async (answer) => {
-    if (!sessionId || !questions[currentQuestionIndex]) return;
+  const showNextQuestion = (questions, index) => {
+    if (index >= questions.length) {
+      setChatCompleted(true);
+      return;
+    }
 
-    const questionId = questions[currentQuestionIndex].id;
-    setAnswers(prev => ({...prev, [questionId]: answer}));
+    const question = questions[index];
+    
+    // Show typing indicator
+    setShowTyping(true);
+    setShowOptions(false);
+
+    // After 1.5 seconds, show the question
+    setTimeout(() => {
+      setMessages(prev => [...prev, {
+        type: 'bot',
+        text: question.question_text,
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+      }]);
+      setShowTyping(false);
+      
+      // Show options after question appears
+      setTimeout(() => {
+        setShowOptions(true);
+      }, 300);
+    }, 1500);
+  };
+
+  const handleAnswer = async (answer) => {
+    if (!sessionId) return;
+
+    const currentQuestion = allQuestions[currentQuestionIndex];
+    
+    // Add user's answer to messages
+    setMessages(prev => [...prev, {
+      type: 'user',
+      text: answer,
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    }]);
+
+    // Hide options immediately
+    setShowOptions(false);
 
     try {
+      // Submit answer to backend
       await axios.post(`${API}/chat/answer`, {
         session_id: sessionId,
-        question_id: questionId,
+        question_id: currentQuestion.id,
         answer: answer
       });
 
-      if (currentQuestionIndex < questions.length - 1) {
-        setCurrentQuestionIndex(prev => prev + 1);
+      // Move to next question
+      const nextIndex = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIndex);
+
+      // Show next question after a delay
+      if (nextIndex < allQuestions.length) {
+        setTimeout(() => {
+          showNextQuestion(allQuestions, nextIndex);
+        }, 1000);
       } else {
-        setChatCompleted(true);
+        // Chat completed
+        setTimeout(() => {
+          setChatCompleted(true);
+        }, 1000);
       }
     } catch (error) {
       console.error('Failed to submit answer:', error);
+      alert('Failed to save answer. Please try again.');
     }
   };
 
@@ -429,11 +506,19 @@ const ChatPage = ({ user }) => {
   };
 
   if (!user) {
-    return <div className="loading">Please login to continue...</div>;
+    return (
+      <div className="chat-page">
+        <div className="loading">Please login to continue...</div>
+      </div>
+    );
   }
 
   if (loading) {
-    return <div className="loading" data-testid="chat-loading">Starting your consultation...</div>;
+    return (
+      <div className="chat-page">
+        <div className="loading">Starting your consultation...</div>
+      </div>
+    );
   }
 
   if (chatCompleted) {
@@ -441,15 +526,11 @@ const ChatPage = ({ user }) => {
       <div className="chat-completed">
         <div className="chat-container">
           <div className="success-icon">✅</div>
-          <h2 data-testid="chat-completed-title">Medical History Completed</h2>
-          <p data-testid="chat-completed-message">
+          <h2>Medical History Completed</h2>
+          <p>
             Thank you for providing your medical history. You can now proceed to book your consultation.
           </p>
-          <button 
-            onClick={proceedToBooking} 
-            className="proceed-btn"
-            data-testid="proceed-to-booking-btn"
-          >
+          <button onClick={proceedToBooking} className="proceed-btn">
             Proceed to Booking
           </button>
         </div>
@@ -457,49 +538,57 @@ const ChatPage = ({ user }) => {
     );
   }
 
-  const currentQuestion = questions[currentQuestionIndex];
+  const currentQuestion = allQuestions[currentQuestionIndex];
 
   return (
     <div className="chat-page">
       <div className="chat-container">
         <div className="chat-header">
-          <h2 data-testid="chat-title">Medical History Assessment</h2>
-          <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
-            ></div>
+          <div className="bot-avatar">🤖</div>
+          <div className="header-info">
+            <h2>Medical Assistant</h2>
+            <p className="progress-text">
+              Question {currentQuestionIndex + 1} of {allQuestions.length}
+            </p>
           </div>
-          <p className="progress-text" data-testid="progress-text">
-            Question {currentQuestionIndex + 1} of {questions.length}
-          </p>
         </div>
 
-        <div className="question-container">
-          <div className="bot-message">
-            <div className="bot-avatar">🤖</div>
-            <div className="message-content">
-              <h3 data-testid="current-question">{currentQuestion?.question_text}</h3>
+        <div className="chat-messages-container">
+          {messages.map((msg, index) => (
+            <div key={index} className={`chat-message ${msg.type}`}>
+              <div className={`message-bubble ${msg.type}`}>
+                <p className="message-text">{msg.text}</p>
+                <div className="message-time">{msg.time}</div>
+              </div>
             </div>
-          </div>
+          ))}
 
-          <div className="answer-options" data-testid="answer-options">
-            {currentQuestion?.options.map((option, index) => (
+          {showTyping && (
+            <div className="chat-message bot">
+              <div className="typing-indicator">
+                <div className="typing-dot"></div>
+                <div className="typing-dot"></div>
+                <div className="typing-dot"></div>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {showOptions && currentQuestion && (
+          <div className="answer-options">
+            {currentQuestion.options && currentQuestion.options.map((option, index) => (
               <button
                 key={index}
                 className="option-btn"
                 onClick={() => handleAnswer(option)}
-                data-testid={`option-${index}`}
               >
                 {option}
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="chat-footer">
-          <p className="disclaimer">Your information is secure and will only be shared with your selected healthcare professional.</p>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -512,6 +601,7 @@ const BookingPage = ({ user }) => {
   const diseaseId = searchParams.get('disease');
   
   const [professional, setProfessional] = useState(null);
+  const [appointmentId, setAppointmentId] = useState(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [loading, setLoading] = useState(true);
@@ -534,63 +624,80 @@ const BookingPage = ({ user }) => {
   }, [user, professionalId]);
 
   const fetchProfessionalDetails = async () => {
-    try {
-      // For now, we'll simulate getting professional details
-      // In a real app, you'd have an endpoint for individual professional details
-      setProfessional({
-        id: professionalId,
-        name: 'Dr. Sarah Johnson',
-        qualification: 'MD Gynecology, MBBS',
-        consultation_fee: 500,
-        profile_image: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=400&h=400&fit=crop&crop=face'
-      });
-    } catch (error) {
-      console.error('Failed to fetch professional details:', error);
-    } finally {
-      setLoading(false);
+  try {
+    // ✅ Fetch real professional data from backend
+    const response = await axios.get(`${API}/conditions/${diseaseId}/coaches/`);
+    const coaches = response.data;
+    
+    // Find the specific coach by ID
+    const selectedCoach = coaches.find(coach => coach.id === professionalId);
+    
+    if (selectedCoach) {
+      setProfessional(selectedCoach);
+    } else {
+      throw new Error('Professional not found');
     }
-  };
+  } catch (error) {
+    console.error('Failed to fetch professional details:', error);
+    alert('Failed to load professional details');
+    navigate(-1);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleBooking = async () => {
-    if (!selectedDate || !selectedTime) {
-      alert('Please select both date and time');
-      return;
-    }
+  if (!selectedDate || !selectedTime) {
+    alert('Please select both date and time');
+    return;
+  }
 
-    setBooking(true);
+  setBooking(true);
 
-    try {
-      const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
-      
-      const response = await axios.post(`${API}/appointments`, {
-        professional_id: professionalId,
-        disease_id: diseaseId,
-        chat_session_id: sessionId,
-        scheduled_time: scheduledTime.toISOString()
-      });
+  try {
+    const scheduledTime = new Date(`${selectedDate}T${selectedTime}:00`);
+    
+    const response = await axios.post(`${API}/appointments`, {
+      professional_id: professionalId,
+      disease_id: diseaseId,
+      chat_session_id: sessionId,
+      scheduled_time: scheduledTime.toISOString()
+    });
 
-      setShowPayment(true);
-    } catch (error) {
-      console.error('Failed to create appointment:', error);
-      alert('Failed to book appointment. Please try again.');
-    } finally {
-      setBooking(false);
-    }
-  };
+    // Save appointment ID
+    setAppointmentId(response.data.id);
+    setShowPayment(true);
+  } catch (error) {
+    console.error('Failed to create appointment:', error);
+    alert('Failed to book appointment. Please try again.');
+  } finally {
+    setBooking(false);
+  }
+};
 
-  const handlePayment = async (appointmentId) => {
-    try {
-      await axios.post(`${API}/payment/mock`, {
-        appointment_id: appointmentId,
-        amount: professional.consultation_fee
-      });
 
-      navigate('/appointments');
-    } catch (error) {
-      console.error('Payment failed:', error);
-      alert('Payment failed. Please try again.');
-    }
-  };
+  const handlePayment = async () => {
+  if (!appointmentId) {
+    alert('No appointment found');
+    return;
+  }
+
+  try {
+    // ✅ CORRECT ENDPOINT PATH
+    await axios.post(`${API}/appointments/payment/mock`, {
+      appointment_id: appointmentId,
+      amount: professional.consultation_fee
+    });
+
+    alert(`Payment successful! Your appointment is scheduled for ${new Date(selectedDate + 'T' + selectedTime).toLocaleString()}`);
+    navigate('/appointments');
+  } catch (error) {
+    console.error('Payment failed:', error);
+    console.error('Error details:', error.response?.data);
+    alert(`Payment failed: ${error.response?.data?.detail || 'Please try again'}`);
+  }
+};
 
   if (!user) {
     return <div className="loading">Please login to continue...</div>;
@@ -664,12 +771,13 @@ const BookingPage = ({ user }) => {
               <h3>Complete Payment</h3>
               <p>Amount to pay: ₹{professional.consultation_fee}</p>
               <button 
-                onClick={() => handlePayment('mock-appointment-id')}
-                className="pay-btn"
-                data-testid="pay-now-btn"
-              >
-                Pay Now (Mock Payment)
-              </button>
+              onClick={handlePayment}  
+              className="pay-btn"
+              data-testid="pay-now-btn"
+               >
+            Pay Now (Mock Payment)
+             </button>
+
             </div>
           </div>
         )}
@@ -706,6 +814,38 @@ const AppointmentsPage = ({ user }) => {
     navigate(`/video-call/${appointmentId}`);
   };
 
+  const canJoinCall = (scheduledTime) => {
+    const now = new Date();
+    const appointmentTime = new Date(scheduledTime);
+    const timeDiff = appointmentTime - now;
+    const minutesDiff = timeDiff / (1000 * 60);
+    
+    return minutesDiff <= 15 && minutesDiff >= -60;
+  };
+
+  const getTimeStatus = (scheduledTime) => {
+    const now = new Date();
+    const appointmentTime = new Date(scheduledTime);
+    const timeDiff = appointmentTime - now;
+    const minutesDiff = timeDiff / (1000 * 60);
+    
+    if (minutesDiff > 15) {
+      const hours = Math.floor(minutesDiff / 60);
+      const mins = Math.floor(minutesDiff % 60);
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        return `Starts in ${days} day${days > 1 ? 's' : ''}`;
+      }
+      return `Starts in ${hours}h ${mins}m`;
+    } else if (minutesDiff > 0) {
+      return `Starting in ${Math.floor(minutesDiff)} minutes`;
+    } else if (minutesDiff >= -60) {
+      return 'In progress';
+    } else {
+      return 'Completed';
+    }
+  };
+
   if (!user) {
     return <div className="loading">Please login to view appointments...</div>;
   }
@@ -729,21 +869,39 @@ const AppointmentsPage = ({ user }) => {
             {appointments.map(appointment => (
               <div key={appointment.id} className="appointment-card" data-testid={`appointment-${appointment.id}`}>
                 <div className="appointment-info">
-                  <h3>Consultation Appointment</h3>
-                  <p>Date: {new Date(appointment.scheduled_time).toLocaleDateString()}</p>
-                  <p>Time: {new Date(appointment.scheduled_time).toLocaleTimeString()}</p>
-                  <p>Status: <span className={`status ${appointment.status}`}>{appointment.status}</span></p>
-                  <p>Payment: <span className={`payment ${appointment.payment_status}`}>{appointment.payment_status}</span></p>
+               <h3>Consultation Appointment</h3>
+              <p><strong>Date:</strong> {new Date(appointment.scheduled_time).toLocaleDateString()}</p>
+              <p><strong>Time:</strong> {new Date(appointment.scheduled_time).toLocaleTimeString()}</p>
+              <p><strong>Professional:</strong> {appointment.professional_name || 'N/A'}</p>
+             <p><strong>Fee:</strong> ₹{appointment.consultation_fee}</p>
+             <p><strong>Status:</strong> <span className={`status ${appointment.status}`}>{appointment.status}</span></p>
+             <p><strong>Payment:</strong> <span className={`payment ${appointment.payment_status}`}>{appointment.payment_status}</span></p>
+              <p className="time-status">{getTimeStatus(appointment.scheduled_time)}</p>
+  
+             {/* ✅ Show meeting link if paid */}
+             {appointment.payment_status === 'paid' && appointment.meeting_link && (
+            <p><strong>Meeting Link:</strong> <a href={appointment.meeting_link} target="_blank" rel="noopener noreferrer" className="meeting-link">{appointment.meeting_link}</a></p>
+             )}
                 </div>
                 <div className="appointment-actions">
                   {appointment.status === 'scheduled' && appointment.payment_status === 'paid' && (
-                    <button 
-                      onClick={() => startVideoCall(appointment.id)}
-                      className="video-btn"
-                      data-testid={`video-call-btn-${appointment.id}`}
-                    >
-                      Join Video Call
-                    </button>
+                    canJoinCall(appointment.scheduled_time) ? (
+                      <button 
+                        onClick={() => startVideoCall(appointment.id)}
+                        className="video-btn active"
+                        data-testid={`video-call-btn-${appointment.id}`}
+                      >
+                        Join Video Call 📹
+                      </button>
+                    ) : (
+                      <button 
+                        className="video-btn disabled"
+                        disabled
+                        title="Available 15 minutes before scheduled time"
+                      >
+                        Join Video Call 🔒
+                      </button>
+                    )
                   )}
                 </div>
               </div>
@@ -767,7 +925,6 @@ const VideoCallPage = ({ user }) => {
     if (!user) {
       return;
     }
-    // Simulate doctor joining after 3 seconds
     setTimeout(() => {
       setChatMessages(prev => [...prev, {
         id: prev.length + 1,
@@ -786,7 +943,6 @@ const VideoCallPage = ({ user }) => {
       }]);
       setNewMessage('');
 
-      // Simulate doctor response
       setTimeout(() => {
         setChatMessages(prev => [...prev, {
           id: prev.length + 1,
@@ -863,13 +1019,11 @@ function App() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // Check if user is logged in
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
     
     if (token && userData) {
       setUser(JSON.parse(userData));
-      // Set axios default header
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
   }, []);
