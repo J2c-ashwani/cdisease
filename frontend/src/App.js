@@ -417,25 +417,38 @@ const DiseasePage = () => {
   const [professionals, setProfessionals] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchDiseaseAndProfessionals();
-  }, [diseaseId]);
-
-  const fetchDiseaseAndProfessionals = async () => {
+  // Wrap fetch function in useCallback to prevent infinite loop
+  const fetchDiseaseAndProfessionals = useCallback(async () => {
     try {
+      setLoading(true);
+      
       const [conditionRes, coachesRes] = await Promise.all([
         axios.get(`${API}/conditions/${diseaseId}`),
-        axios.get(`${API}/conditions/${diseaseId}/coaches/`)
+        axios.get(`${API}/conditions/${diseaseId}/coaches`)
       ]);
       
       setDisease(conditionRes.data);
-      setProfessionals(coachesRes.data);
+      
+      // FIX: Extract coaches array from response
+      const coachesData = Array.isArray(coachesRes.data) ? coachesRes.data : [];
+      setProfessionals(coachesData);
+     
+      
+      console.log('Coaches fetched:', coachesRes.data.coaches);
     } catch (error) {
       console.error('Failed to fetch data:', error);
+      setDisease(null);
+      setProfessionals([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [diseaseId]); // Only depend on diseaseId
+
+  useEffect(() => {
+    if (diseaseId) {
+      fetchDiseaseAndProfessionals();
+    }
+  }, [diseaseId, fetchDiseaseAndProfessionals]);
 
   if (loading) {
     return <div className="loading" data-testid="loading">Loading...</div>;
@@ -459,37 +472,49 @@ const DiseasePage = () => {
 
       <div className="professionals-section">
         <h2 data-testid="professionals-title">Available Specialists</h2>
-        <div className="professionals-grid" data-testid="professionals-grid">
-          {professionals.map((professional) => (
-            <div key={professional.id} className="professional-card" data-testid={`professional-${professional.id}`}>
-              <img src={professional.profile_image} alt={professional.name} className="professional-image" />
-              <div className="professional-info">
-                <h3 className="professional-name">{professional.name}</h3>
-                <p className="professional-qualification">{professional.qualification}</p>
-                <div className="professional-details">
-                  <span className="experience">{professional.years_experience} years experience</span>
-                  <span className="rating">⭐ {professional.rating}</span>
-                </div>
-                <div className="languages">
-                  {professional.languages.map(lang => (
-                    <span key={lang} className="language-tag">{lang}</span>
-                  ))}
-                </div>
-                <p className="professional-bio">{professional.bio}</p>
-                <div className="professional-footer">
-                  <span className="fee">₹{professional.consultation_fee}</span>
-                  <Link 
-                    to={`/chat/${professional.id}?disease=${diseaseId}`}
-                    className="consult-btn"
-                    data-testid={`consult-btn-${professional.id}`}
-                  >
-                    Start Chat
-                  </Link>
+        
+        {/* Show message if no professionals found */}
+        {professionals.length === 0 ? (
+          <div className="no-professionals">
+            <p>No specialists available for this condition yet.</p>
+          </div>
+        ) : (
+          <div className="professionals-grid" data-testid="professionals-grid">
+            {professionals.map((professional) => (
+              <div key={professional.id} className="professional-card" data-testid={`professional-${professional.id}`}>
+                <img 
+                  src={professional.profile_image || 'https://via.placeholder.com/150'} 
+                  alt={professional.name} 
+                  className="professional-image" 
+                />
+                <div className="professional-info">
+                  <h3 className="professional-name">{professional.name}</h3>
+                  <p className="professional-qualification">{professional.qualification || 'Healthcare Professional'}</p>
+                  <div className="professional-details">
+                    <span className="experience">{professional.years_experience || 5} years experience</span>
+                    <span className="rating">⭐ {professional.rating || 4.5}</span>
+                  </div>
+                  <div className="languages">
+                    {(professional.languages || ['English']).map(lang => (
+                      <span key={lang} className="language-tag">{lang}</span>
+                    ))}
+                  </div>
+                  <p className="professional-bio">{professional.bio || 'Experienced healthcare professional'}</p>
+                  <div className="professional-footer">
+                    <span className="fee">₹{professional.consultation_fee || 500}</span>
+                    <Link 
+                      to={`/chat/${professional.id}?disease=${diseaseId}`}
+                      className="consult-btn"
+                      data-testid={`consult-btn-${professional.id}`}
+                    >
+                      Start Chat
+                    </Link>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1155,36 +1180,72 @@ const ProfessionalDashboard = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [showFeeModal, setShowFeeModal] = useState(false);
   const [newFee, setNewFee] = useState('');
+  const [feeChangeReason, setFeeChangeReason] = useState('');  // ✅ Added
+  const [feeRequests, setFeeRequests] = useState([]);  // ✅ Added
+  const [showRequestHistory, setShowRequestHistory] = useState(false);  // ✅ Added
   const navigate = useNavigate();
 
+  // ✅ Added: Fetch fee request history
+  const fetchFeeRequests = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      const response = await axios.get(`${API}/professional/fee-change-requests`, config);
+      setFeeRequests(response.data.requests || []);
+    } catch (error) {
+      console.error('Error fetching fee requests:', error);
+    }
+  }, []);
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      const response = await axios.get(`${API}/professional/dashboard`, config);
+      
+      console.log('✅ Dashboard data:', response.data);
+      
+      setStats(response.data);
+      setAppointments(response.data.appointments || []);
+      setNewFee(response.data.consultation_fee || 500);
+      
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error);
+      if (error.response?.status === 401) {
+        navigate('/auth');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate]);
+
+  // ✅ Updated useEffect
   useEffect(() => {
     if (!user) {
       navigate('/auth');
       return;
     }
     fetchDashboardData();
-  }, [user]);
-
-  const fetchDashboardData = async () => {
-    try {
-      const [statsRes, appointmentsRes] = await Promise.all([
-        axios.get(`${API}/professional/dashboard/stats`),
-        axios.get(`${API}/professional/appointments/upcoming`)
-      ]);
-      
-      setStats(statsRes.data);
-      setAppointments(appointmentsRes.data);
-      setNewFee(statsRes.data.consultation_fee);
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    fetchFeeRequests();
+  }, [user, navigate, fetchDashboardData, fetchFeeRequests]);
 
   const viewChatHistory = async (appointmentId) => {
     try {
-      const response = await axios.get(`${API}/professional/appointments/${appointmentId}/chat-history`);
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      const response = await axios.get(
+        `${API}/professional/appointments/${appointmentId}/chat-history`,
+        config
+      );
       setChatHistory(response.data);
       setSelectedAppointment(appointmentId);
     } catch (error) {
@@ -1193,17 +1254,32 @@ const ProfessionalDashboard = ({ user }) => {
     }
   };
 
+  // ✅ Updated: Submit fee change request
   const updateConsultationFee = async () => {
+    if (!newFee || !feeChangeReason) {
+      alert('Please enter both new fee and reason for change');
+      return;
+    }
+
     try {
-      await axios.put(`${API}/professional/profile/fee`, {
-        consultation_fee: parseInt(newFee)
-      });
-      alert('Consultation fee updated successfully!');
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      await axios.post(`${API}/professional/fee-change-request`, {
+        new_fee: parseInt(newFee),
+        reason: feeChangeReason
+      }, config);
+      
+      alert('Fee change request submitted successfully! Waiting for admin approval.');
       setShowFeeModal(false);
-      fetchDashboardData();
+      setFeeChangeReason('');
+      fetchFeeRequests();
+      
     } catch (error) {
-      console.error('Failed to update fee:', error);
-      alert('Failed to update consultation fee');
+      console.error('Failed to submit fee change request:', error);
+      alert('Failed to submit fee change request');
     }
   };
 
@@ -1220,7 +1296,7 @@ const ProfessionalDashboard = ({ user }) => {
       <div className="dashboard-container">
         <div className="dashboard-header">
           <h1>Professional Dashboard</h1>
-          <p>Welcome back, {stats?.professional_name}!</p>
+          <p>Welcome back, {user.name}!</p>
         </div>
 
         {/* Stats Cards */}
@@ -1264,31 +1340,27 @@ const ProfessionalDashboard = ({ user }) => {
           <h2>This Month</h2>
           <div className="earnings-details">
             <div className="earnings-item">
-              <span>Gross Earnings:</span>
-              <strong>₹{stats?.earnings_this_month?.toLocaleString() || 0}</strong>
+              <span>Appointments:</span>
+              <strong>{stats?.this_month_appointments || 0}</strong>
             </div>
             <div className="earnings-item">
               <span>Platform Fee (15%):</span>
-              <strong className="commission">-₹{stats?.commission_this_month?.toLocaleString() || 0}</strong>
-            </div>
-            <div className="earnings-item">
-              <span>Net Earnings:</span>
-              <strong className="net-earnings">₹{stats?.net_earnings_this_month?.toLocaleString() || 0}</strong>
+              <strong className="commission">₹{stats?.platform_commission?.toLocaleString() || 0}</strong>
             </div>
           </div>
         </div>
 
         {/* Consultation Fee */}
         <div className="fee-section">
-          <h3>Your Consultation Fee: ₹{stats?.consultation_fee}</h3>
+          <h3>Your Consultation Fee: ₹{stats?.consultation_fee || 500}</h3>
           <button onClick={() => setShowFeeModal(true)} className="update-fee-btn">
-            Update Fee
+            Request Fee Change
           </button>
         </div>
 
         {/* Upcoming Appointments */}
         <div className="appointments-section">
-          <h2>Upcoming Appointments</h2>
+          <h2>Upcoming Appointments ({appointments.length})</h2>
           {appointments.length === 0 ? (
             <p className="no-data">No upcoming appointments</p>
           ) : (
@@ -1296,10 +1368,11 @@ const ProfessionalDashboard = ({ user }) => {
               {appointments.map(apt => (
                 <div key={apt.id} className="appointment-item">
                   <div className="apt-info">
-                    <h4>{apt.patient_name || 'Patient'}</h4>
+                    <h4>Patient #{apt.user_id?.substring(0, 8)}</h4>
                     <p>📅 {new Date(apt.scheduled_time).toLocaleDateString()}</p>
                     <p>⏰ {new Date(apt.scheduled_time).toLocaleTimeString()}</p>
                     <p>💰 ₹{apt.consultation_fee}</p>
+                    <p><span className={`status-badge ${apt.status}`}>{apt.status}</span></p>
                   </div>
                   <div className="apt-actions">
                     <button 
@@ -1308,16 +1381,6 @@ const ProfessionalDashboard = ({ user }) => {
                     >
                       View Medical History
                     </button>
-                    {apt.meeting_link && (
-                      <a 
-                        href={apt.meeting_link} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="join-meeting-btn"
-                      >
-                        Join Meeting
-                      </a>
-                    )}
                   </div>
                 </div>
               ))}
@@ -1354,28 +1417,157 @@ const ProfessionalDashboard = ({ user }) => {
           </div>
         )}
 
-        {/* Update Fee Modal */}
+        {/* ✅ Updated Fee Change Request Modal */}
         {showFeeModal && (
           <div className="modal-overlay" onClick={() => setShowFeeModal(false)}>
-            <div className="modal-content small" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
-                <h2>Update Consultation Fee</h2>
+                <h2>Request Fee Change</h2>
                 <button onClick={() => setShowFeeModal(false)} className="close-btn">×</button>
               </div>
               <div className="modal-body">
-                <label>New Consultation Fee (₹)</label>
+                <div className="fee-info-box" style={{ 
+                  background: '#f0f9ff', 
+                  padding: '15px', 
+                  borderRadius: '8px', 
+                  marginBottom: '20px' 
+                }}>
+                  <p>Current Fee: <strong>₹{stats?.consultation_fee || 500}</strong></p>
+                </div>
+                
+                <label>New Consultation Fee (₹) *</label>
                 <input
                   type="number"
                   value={newFee}
                   onChange={(e) => setNewFee(e.target.value)}
                   min="100"
                   max="10000"
-                  placeholder="Enter fee"
+                  placeholder="Enter new fee"
+                  style={{ width: '100%', padding: '10px', marginBottom: '15px' }}
                 />
-                <small>Platform commission: 15% | Net: ₹{(newFee * 0.85).toFixed(0)}</small>
-                <button onClick={updateConsultationFee} className="submit-btn">
-                  Update Fee
+                
+                <label>Reason for Change *</label>
+                <textarea
+                  value={feeChangeReason}
+                  onChange={(e) => setFeeChangeReason(e.target.value)}
+                  placeholder="Please explain why you want to change your consultation fee..."
+                  rows="4"
+                  style={{ 
+                    width: '100%', 
+                    padding: '10px', 
+                    marginBottom: '10px',
+                    borderRadius: '5px',
+                    border: '1px solid #ccc'
+                  }}
+                />
+                
+                <div className="fee-calculation" style={{ 
+                  background: '#f9fafb', 
+                  padding: '10px', 
+                  borderRadius: '5px', 
+                  marginBottom: '15px' 
+                }}>
+                  <p style={{ margin: '5px 0' }}>Platform commission: 15%</p>
+                  <p style={{ margin: '5px 0' }}>
+                    <strong>Your net earnings: ₹{(newFee * 0.85).toFixed(0)}</strong>
+                  </p>
+                </div>
+                
+                <button 
+                  onClick={updateConsultationFee} 
+                  className="submit-btn"
+                  disabled={!newFee || !feeChangeReason}
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px',
+                    opacity: (!newFee || !feeChangeReason) ? 0.5 : 1
+                  }}
+                >
+                  Submit Request
                 </button>
+                
+                <button 
+                  onClick={() => setShowRequestHistory(!showRequestHistory)}
+                  className="view-history-btn"
+                  style={{ 
+                    width: '100%', 
+                    marginTop: '10px', 
+                    padding: '10px',
+                    background: '#f3f4f6',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {showRequestHistory ? 'Hide' : 'View'} Request History
+                </button>
+                
+                {/* ✅ Fee Request History */}
+                {showRequestHistory && (
+                  <div className="fee-requests-history" style={{ marginTop: '20px' }}>
+                    <h3>Previous Requests</h3>
+                    {feeRequests.length === 0 ? (
+                      <p style={{ textAlign: 'center', color: '#666' }}>No previous fee change requests</p>
+                    ) : (
+                      <div className="requests-list">
+                        {feeRequests.map(request => (
+                          <div 
+                            key={request.id} 
+                            className={`request-item`}
+                            style={{ 
+                              border: '1px solid #e5e7eb', 
+                              borderRadius: '8px', 
+                              padding: '15px', 
+                              marginBottom: '10px',
+                              background: request.status === 'pending' ? '#fffbeb' : 
+                                         request.status === 'approved' ? '#f0fdf4' : '#fef2f2'
+                            }}
+                          >
+                            <div className="request-info">
+                              <p style={{ margin: '5px 0' }}>
+                                <strong>₹{request.current_fee} → ₹{request.requested_fee}</strong>
+                              </p>
+                              <p style={{ margin: '5px 0', fontSize: '0.9em', color: '#666' }}>
+                                {new Date(request.requested_at).toLocaleDateString()}
+                              </p>
+                              <span 
+                                className={`status-badge`}
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '4px 12px',
+                                  borderRadius: '12px',
+                                  fontSize: '0.85em',
+                                  fontWeight: 'bold',
+                                  background: request.status === 'pending' ? '#fbbf24' :
+                                            request.status === 'approved' ? '#10b981' : '#ef4444',
+                                  color: 'white'
+                                }}
+                              >
+                                {request.status.toUpperCase()}
+                              </span>
+                            </div>
+                            {request.status !== 'pending' && (
+                              <div className="admin-feedback" style={{ 
+                                marginTop: '10px', 
+                                paddingTop: '10px', 
+                                borderTop: '1px solid #e5e7eb' 
+                              }}>
+                                <p style={{ fontSize: '0.85em', margin: '3px 0' }}>
+                                  <small>Reviewed by: {request.reviewed_by}</small>
+                                </p>
+                                {request.admin_notes && (
+                                  <p style={{ fontSize: '0.85em', margin: '3px 0' }}>
+                                    <small><strong>Admin note:</strong> {request.admin_notes}</small>
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1384,6 +1576,7 @@ const ProfessionalDashboard = ({ user }) => {
     </div>
   );
 };
+
 // ============================================
 // ADMIN DASHBOARD
 // ============================================
@@ -1392,11 +1585,81 @@ const AdminDashboard = ({ user }) => {
   const [professionals, setProfessionals] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [users, setUsers] = useState([]);
+  const [feeRequests, setFeeRequests] = useState([]);  // ✅ Added
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Wrap fetchDashboardData with useCallback
+  // ✅ Added: Fetch fee requests
+  const fetchFeeRequests = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      const response = await axios.get(`${API}/admin/fee-change-requests?status=pending`, config);
+      setFeeRequests(response.data.requests || []);
+    } catch (error) {
+      console.error('Error fetching fee requests:', error);
+    }
+  }, []);
+
+  // ✅ Added: Handle fee approval
+  const handleApproveFee = async (requestId) => {
+    const notes = prompt('Admin notes (optional):');
+    
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      await axios.post(
+        `${API}/admin/fee-change-requests/${requestId}/approve`,
+        { notes: notes || '' },
+        config
+      );
+      
+      alert('Fee change approved successfully!');
+      fetchFeeRequests();
+      
+    } catch (error) {
+      console.error('Error approving fee change:', error);
+      alert('Failed to approve fee change');
+    }
+  };
+
+  // ✅ Added: Handle fee rejection
+  const handleRejectFee = async (requestId) => {
+    const notes = prompt('Reason for rejection (required):');
+    
+    if (!notes) {
+      alert('Please provide a reason for rejection');
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      const config = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
+      
+      await axios.post(
+        `${API}/admin/fee-change-requests/${requestId}/reject`,
+        { notes },
+        config
+      );
+      
+      alert('Fee change request rejected');
+      fetchFeeRequests();
+      
+    } catch (error) {
+      console.error('Error rejecting fee change:', error);
+      alert('Failed to reject fee change');
+    }
+  };
+
   const fetchDashboardData = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
@@ -1416,7 +1679,6 @@ const AdminDashboard = ({ user }) => {
     }
   }, [navigate]);
 
-  // Wrap fetchTabData with useCallback
   const fetchTabData = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
@@ -1433,13 +1695,14 @@ const AdminDashboard = ({ user }) => {
       } else if (activeTab === 'users') {
         const usersRes = await axios.get(`${API}/admin/users?limit=100`, config);
         setUsers(usersRes.data.users || []);
+      } else if (activeTab === 'fee-requests') {  // ✅ Added
+        fetchFeeRequests();
       }
     } catch (error) {
       console.error('Failed to fetch tab data:', error);
     }
-  }, [activeTab]);
+  }, [activeTab, fetchFeeRequests]);
 
-  // Update useEffect to include fetchDashboardData in dependencies
   useEffect(() => {
     if (!user) {
       navigate('/auth');
@@ -1448,7 +1711,6 @@ const AdminDashboard = ({ user }) => {
     fetchDashboardData();
   }, [user, navigate, fetchDashboardData]);
 
-  // Update useEffect to include fetchTabData in dependencies
   useEffect(() => {
     if (user && !loading && activeTab !== 'overview') {
       fetchTabData();
@@ -1487,7 +1749,7 @@ const AdminDashboard = ({ user }) => {
           <p>Platform Management & Analytics</p>
         </div>
 
-        {/* Tab Navigation */}
+        {/* ✅ Updated Tab Navigation */}
         <div className="admin-tabs">
           <button 
             className={activeTab === 'overview' ? 'active' : ''}
@@ -1512,6 +1774,13 @@ const AdminDashboard = ({ user }) => {
             onClick={() => setActiveTab('users')}
           >
             👥 Users
+          </button>
+          {/* ✅ Added Fee Requests Tab */}
+          <button 
+            className={activeTab === 'fee-requests' ? 'active' : ''}
+            onClick={() => setActiveTab('fee-requests')}
+          >
+            💰 Fee Requests {feeRequests.length > 0 && `(${feeRequests.length})`}
           </button>
         </div>
 
@@ -1730,6 +1999,151 @@ const AdminDashboard = ({ user }) => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ✅ Added Fee Requests Tab */}
+        {activeTab === 'fee-requests' && (
+          <div className="fee-requests-section">
+            <h2>Pending Fee Change Requests</h2>
+            
+            {feeRequests.length === 0 ? (
+              <p className="no-data">No pending fee change requests</p>
+            ) : (
+              <div className="fee-requests-grid" style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', 
+                gap: '20px',
+                marginTop: '20px'
+              }}>
+                {feeRequests.map(request => (
+                  <div 
+                    key={request.id} 
+                    className="fee-request-card"
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '12px',
+                      padding: '20px',
+                      background: 'white',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <div className="request-header" style={{ 
+                      marginBottom: '15px', 
+                      paddingBottom: '15px', 
+                      borderBottom: '2px solid #f3f4f6' 
+                    }}>
+                      <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2em' }}>
+                        {request.professional_name}
+                      </h3>
+                      <span style={{ fontSize: '0.85em', color: '#6b7280' }}>
+                        {new Date(request.requested_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    
+                    <div className="fee-change-details" style={{ marginBottom: '15px' }}>
+                      <div className="fee-comparison" style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between',
+                        marginBottom: '10px'
+                      }}>
+                        <div className="current-fee" style={{ textAlign: 'center' }}>
+                          <label style={{ display: 'block', fontSize: '0.85em', color: '#6b7280', marginBottom: '5px' }}>
+                            Current Fee
+                          </label>
+                          <strong style={{ fontSize: '1.5em', color: '#374151' }}>
+                            ₹{request.current_fee}
+                          </strong>
+                        </div>
+                        <div className="arrow" style={{ fontSize: '2em', color: '#9ca3af' }}>→</div>
+                        <div className="requested-fee" style={{ textAlign: 'center' }}>
+                          <label style={{ display: 'block', fontSize: '0.85em', color: '#6b7280', marginBottom: '5px' }}>
+                            Requested Fee
+                          </label>
+                          <strong style={{ fontSize: '1.5em', color: '#059669' }}>
+                            ₹{request.requested_fee}
+                          </strong>
+                        </div>
+                      </div>
+                      
+                      <div className="fee-change-amount" style={{ textAlign: 'center', marginTop: '10px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '5px 15px',
+                          borderRadius: '20px',
+                          fontSize: '0.9em',
+                          fontWeight: 'bold',
+                          background: request.requested_fee > request.current_fee ? '#dcfce7' : '#fee2e2',
+                          color: request.requested_fee > request.current_fee ? '#059669' : '#dc2626'
+                        }}>
+                          {request.requested_fee > request.current_fee ? '+' : ''}
+                          ₹{Math.abs(request.requested_fee - request.current_fee)} 
+                          ({((Math.abs(request.requested_fee - request.current_fee) / request.current_fee) * 100).toFixed(1)}%)
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {request.reason && (
+                      <div className="request-reason" style={{ 
+                        background: '#f9fafb', 
+                        padding: '12px', 
+                        borderRadius: '8px',
+                        marginBottom: '15px'
+                      }}>
+                        <strong style={{ display: 'block', marginBottom: '5px', fontSize: '0.9em' }}>
+                          Reason:
+                        </strong>
+                        <p style={{ margin: 0, fontSize: '0.9em', color: '#4b5563' }}>
+                          {request.reason}
+                        </p>
+                      </div>
+                    )}
+                    
+                    <div className="request-actions" style={{ 
+                      display: 'flex', 
+                      gap: '10px',
+                      marginTop: '15px'
+                    }}>
+                      <button 
+                        onClick={() => handleApproveFee(request.id)}
+                        className="approve-btn"
+                        style={{
+                          flex: 1,
+                          padding: '12px',
+                          background: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          fontSize: '0.95em'
+                        }}
+                      >
+                        ✓ Approve
+                      </button>
+                      <button 
+                        onClick={() => handleRejectFee(request.id)}
+                        className="reject-btn"
+                        style={{
+                          flex: 1,
+                          padding: '12px',
+                          background: '#ef4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          fontSize: '0.95em'
+                        }}
+                      >
+                        ✗ Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

@@ -1,285 +1,155 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
-from app.core.dependencies import get_current_professional_or_coach
+from app.core.dependencies import get_current_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime, timezone
-from pydantic import BaseModel
 import logging
+import uuid 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-
-class UpdateFeeRequest(BaseModel):
-    consultation_fee: int
-
-
-@router.get("/dashboard/stats")
-async def get_professional_stats(
-    professional: dict = Depends(get_current_professional_or_coach),
+@router.get("/dashboard")
+async def get_professional_dashboard(
+    current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get professional dashboard statistics"""
+    """Get professional dashboard data"""
     try:
-        # Get coach profile (professionals are stored in coaches collection)
-        coach = await db.coaches.find_one({"user_id": professional["id"]})
-        if not coach:
-            raise HTTPException(status_code=404, detail="Professional profile not found")
+        professional_id = current_user.get("id")
         
-        coach_id = coach["id"]
+        # Get appointments for this professional
+        appointments = await db.appointments.find(
+            {"professional_id": professional_id}
+        ).sort("scheduled_time", 1).to_list(length=100)
         
-        # Total appointments
-        total_appointments = await db.appointments.count_documents({
-            "professional_id": coach_id
-        })
+        # Calculate stats
+        total_appointments = len(appointments)
         
-        # Completed appointments
-        completed = await db.appointments.count_documents({
-            "professional_id": coach_id,
-            "status": "completed"
-        })
+        upcoming = [apt for apt in appointments if apt.get("status") == "scheduled"]
+        completed = [apt for apt in appointments if apt.get("status") == "completed"]
         
-        # Upcoming appointments
-        upcoming = await db.appointments.count_documents({
-            "professional_id": coach_id,
-            "status": "scheduled",
-            "scheduled_time": {"$gte": datetime.now(timezone.utc).isoformat()}
-        })
-        
-        # Total earnings
-        paid_appointments = await db.appointments.find({
-            "professional_id": coach_id,
-            "payment_status": "paid"
-        }).to_list(length=None)
-        
-        total_earnings = sum(apt.get("consultation_fee", 0) for apt in paid_appointments)
-        platform_commission = total_earnings * 0.15  # 15% platform fee
+        # Calculate earnings
+        total_earnings = sum(apt.get("consultation_fee", 0) for apt in completed)
+        platform_commission = total_earnings * 0.15
         net_earnings = total_earnings - platform_commission
         
-        # This month earnings
-        first_day_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0)
-        
-        this_month_appointments = await db.appointments.find({
-            "professional_id": coach_id,
-            "payment_status": "paid",
-            "created_at": {"$gte": first_day_month.isoformat()}
-        }).to_list(length=None)
-        
-        earnings_this_month = sum(apt.get("consultation_fee", 0) for apt in this_month_appointments)
-        commission_this_month = earnings_this_month * 0.15
-        net_earnings_this_month = earnings_this_month - commission_this_month
+        # This month stats
+        now = datetime.now(timezone.utc)
+        this_month_appointments = [
+            apt for apt in appointments 
+            if datetime.fromisoformat(apt.get("scheduled_time", "").replace("Z", "+00:00")).month == now.month
+        ]
         
         return {
             "total_appointments": total_appointments,
-            "completed_appointments": completed,
-            "upcoming_appointments": upcoming,
+            "upcoming_appointments": len(upcoming),
+            "completed_appointments": len(completed),
             "total_earnings": total_earnings,
-            "net_earnings": net_earnings,
             "platform_commission": platform_commission,
-            "earnings_this_month": earnings_this_month,
-            "net_earnings_this_month": net_earnings_this_month,
-            "commission_this_month": commission_this_month,
-            "consultation_fee": coach.get("consultation_fee", 0),
-            "professional_name": coach.get("name", "Unknown"),
-            "professional_email": coach.get("email", "")
+            "net_earnings": net_earnings,
+            "this_month_appointments": len(this_month_appointments),
+            "appointments": [
+                {
+                    "id": apt.get("id"),
+                    "user_id": apt.get("user_id"),
+                    "scheduled_time": apt.get("scheduled_time"),
+                    "status": apt.get("status"),
+                    "consultation_fee": apt.get("consultation_fee"),
+                    "payment_status": apt.get("payment_status", "pending")
+                }
+                for apt in upcoming[:10]  # Only return next 10 upcoming
+            ]
         }
     
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error fetching professional stats: {e}")
+        logger.error(f"Error fetching professional dashboard: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/appointments")
 async def get_professional_appointments(
-    professional: dict = Depends(get_current_professional_or_coach),
+    current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get all appointments for professional"""
+    """Get all appointments for this professional"""
     try:
-        # Get coach profile
-        coach = await db.coaches.find_one({"user_id": professional["id"]})
-        if not coach:
-            raise HTTPException(status_code=404, detail="Professional profile not found")
+        professional_id = current_user.get("id")
         
         appointments = await db.appointments.find(
-            {"professional_id": coach["id"]},
-            {"_id": 0}
+            {"professional_id": professional_id}
         ).sort("scheduled_time", -1).to_list(length=100)
         
-        # Enrich appointments with patient names
-        for apt in appointments:
-            patient = await db.users.find_one(
-                {"id": apt.get("user_id")},
-                {"_id": 0, "name": 1, "email": 1}
-            )
-            if patient:
-                apt["patient_name"] = patient.get("name", "Unknown")
-                apt["patient_email"] = patient.get("email", "")
-        
-        return appointments
+        return {"appointments": appointments}
     
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error fetching appointments: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.get("/appointments/upcoming")
-async def get_upcoming_appointments(
-    professional: dict = Depends(get_current_professional_or_coach),
+@router.post("/fee-change-request")
+async def request_fee_change(
+    request_data: dict,
+    current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Get only upcoming appointments"""
+    """Professional submits fee change request"""
     try:
-        coach = await db.coaches.find_one({"user_id": professional["id"]})
-        if not coach:
-            raise HTTPException(status_code=404, detail="Professional profile not found")
+        professional_id = current_user.get("id")
         
-        now = datetime.now(timezone.utc).isoformat()
+        # Get current fee
+        coach = await db.coaches.find_one({"user_id": professional_id})
+        current_fee = coach.get("consultation_fee", 500)
         
-        appointments = await db.appointments.find(
-            {
-                "professional_id": coach["id"],
-                "status": "scheduled",
-                "scheduled_time": {"$gte": now}
-            },
-            {"_id": 0}
-        ).sort("scheduled_time", 1).to_list(length=50)
+        new_fee = request_data.get("new_fee")
+        reason = request_data.get("reason", "")
         
-        # Enrich with patient info
-        for apt in appointments:
-            patient = await db.users.find_one(
-                {"id": apt.get("user_id")},
-                {"_id": 0, "name": 1, "email": 1, "phone": 1}
-            )
-            if patient:
-                apt["patient_name"] = patient.get("name", "Unknown")
-                apt["patient_email"] = patient.get("email", "")
-                apt["patient_phone"] = patient.get("phone", "")
+        # Create fee change request
+        fee_request = {
+            "id": str(uuid.uuid4()),
+            "professional_id": professional_id,
+            "professional_name": current_user.get("name"),
+            "current_fee": current_fee,
+            "requested_fee": new_fee,
+            "reason": reason,
+            "status": "pending",
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+            "reviewed_at": None,
+            "reviewed_by": None,
+            "admin_notes": None
+        }
         
-        return appointments
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching upcoming appointments: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/appointments/{appointment_id}/chat-history")
-async def get_patient_chat_history(
-    appointment_id: str,
-    professional: dict = Depends(get_current_professional_or_coach),
-    db: AsyncIOMotorDatabase = Depends(get_db)
-):
-    """Get patient's chat history for an appointment"""
-    try:
-        # Get appointment
-        appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
-        if not appointment:
-            raise HTTPException(status_code=404, detail="Appointment not found")
+        await db.fee_change_requests.insert_one(fee_request)
         
-        # Verify this professional owns the appointment
-        coach = await db.coaches.find_one({"user_id": professional["id"]})
-        if not coach or appointment["professional_id"] != coach["id"]:
-            raise HTTPException(status_code=403, detail="Not authorized to view this chat history")
-        
-        # Get chat session
-        session = await db.chat_sessions.find_one(
-            {"id": appointment["chat_session_id"]},
-            {"_id": 0}
-        )
-        
-        if not session:
-            return {
-                "message": "No chat history found",
-                "answers": []
-            }
-        
-        # Get patient info
-        patient = await db.users.find_one(
-            {"id": session.get("user_id")},
-            {"_id": 0, "name": 1, "email": 1}
-        )
+        logger.info(f"Fee change request created: {professional_id} - {current_fee} → {new_fee}")
         
         return {
-            "patient_name": patient.get("name", "Unknown") if patient else "Unknown",
-            "patient_email": patient.get("email", "") if patient else "",
-            "disease_id": session.get("disease_id"),
-            "started_at": session.get("started_at"),
-            "completed_at": session.get("completed_at"),
-            "answers": session.get("answers", [])
+            "message": "Fee change request submitted successfully. Waiting for admin approval.",
+            "request_id": fee_request["id"],
+            "status": "pending"
         }
     
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error fetching chat history: {e}")
+        logger.error(f"Error creating fee change request: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/profile/fee")
-async def update_consultation_fee(
-    request: UpdateFeeRequest,
-    professional: dict = Depends(get_current_professional_or_coach),
+@router.get("/fee-change-requests")
+async def get_my_fee_requests(
+    current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    """Update professional's consultation fee"""
+    """Get professional's fee change request history"""
     try:
-        if request.consultation_fee < 100:
-            raise HTTPException(status_code=400, detail="Consultation fee must be at least ₹100")
+        professional_id = current_user.get("id")
         
-        if request.consultation_fee > 10000:
-            raise HTTPException(status_code=400, detail="Consultation fee cannot exceed ₹10,000")
-        
-        coach = await db.coaches.find_one({"user_id": professional["id"]})
-        if not coach:
-            raise HTTPException(status_code=404, detail="Professional profile not found")
-        
-        await db.coaches.update_one(
-            {"user_id": professional["id"]},
-            {
-                "$set": {
-                    "consultation_fee": request.consultation_fee,
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }
-            }
-        )
-        
-        return {
-            "message": "Consultation fee updated successfully",
-            "consultation_fee": request.consultation_fee
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating consultation fee: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/profile")
-async def get_professional_profile(
-    professional: dict = Depends(get_current_professional_or_coach),
-    db: AsyncIOMotorDatabase = Depends(get_db)
-):
-    """Get professional's profile"""
-    try:
-        coach = await db.coaches.find_one(
-            {"user_id": professional["id"]},
+        requests = await db.fee_change_requests.find(
+            {"professional_id": professional_id},
             {"_id": 0}
-        )
+        ).sort("requested_at", -1).to_list(length=50)
         
-        if not coach:
-            raise HTTPException(status_code=404, detail="Professional profile not found")
-        
-        return coach
+        return {"requests": requests}
     
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error fetching profile: {e}")
+        logger.error(f"Error fetching fee requests: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
