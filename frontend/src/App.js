@@ -410,6 +410,420 @@ const AuthPage = ({ setUser }) => {
     </div>
   );
 };
+const CategorySelectionPage = () => {
+  const navigate = useNavigate();
+
+  const conditions = [
+    { id: 'diabetes', name: 'Diabetes', icon: '🩸' },
+    { id: 'hypertension', name: 'Hypertension', icon: '❤️' },
+    { id: 'heart-disease', name: 'Heart Disease', icon: '💔' },
+    { id: 'obesity', name: 'Weight Management', icon: '⚖️' },
+    { id: 'arthritis', name: 'Arthritis', icon: '🦴' },
+    { id: 'kidney-disease', name: 'Kidney Disease', icon: '🫘' },
+    { id: 'thyroid', name: 'Thyroid', icon: '🦋' }
+  ];
+
+  const categories = [
+    {
+      id: 'nutritionist',
+      title: 'Nutritionists',
+      icon: '🥗',
+      subtitle: 'Diet Plans & Nutrition Advice',
+      description: 'Personalized meal plans and nutrition guidance',
+      color: '#10b981',
+      lightBg: '#ecfdf5',
+      darkBg: '#d1fae5'
+    },
+    {
+      id: 'fitness',
+      title: 'Gym Trainers',
+      icon: '💪',
+      subtitle: 'Strength & Fitness Training',
+      description: 'Customized workout plans and fitness coaching',
+      color: '#3b82f6',
+      lightBg: '#eff6ff',
+      darkBg: '#dbeafe'
+    },
+    {
+      id: 'yoga',
+      title: 'Yoga Instructors',
+      icon: '🧘',
+      subtitle: 'Yoga Therapy & Mindfulness',
+      description: 'Therapeutic yoga and stress management',
+      color: '#8b5cf6',
+      lightBg: '#f5f3ff',
+      darkBg: '#ede9fe'
+    }
+  ];
+
+  return (
+    <div style={{ background: '#ffffff', minHeight: '100vh' }}>
+      
+      {/* Hero Section - Clean & Professional */}
+      <section style={{
+        background: 'linear-gradient(180deg, #22d3ee 0%, #06b6d4 100%)',
+        padding: '100px 20px 80px',
+        color: 'white'
+      }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', textAlign: 'center' }}>
+          <h1 style={{
+            fontSize: 'clamp(2rem, 5vw, 3.5rem)',
+            fontWeight: '700',
+            marginBottom: '24px',
+            lineHeight: '1.2',
+            letterSpacing: '-0.02em'
+          }}>
+            Expert Health Consultations for<br />Chronic Disease Management
+          </h1>
+          <p style={{
+            fontSize: 'clamp(1.1rem, 2vw, 1.3rem)',
+            marginBottom: '50px',
+            opacity: 0.95,
+            maxWidth: '700px',
+            margin: '0 auto 50px',
+            lineHeight: '1.6'
+          }}>
+           Book one-on-one sessions with certified nutritionists, fitness trainers, and yoga instructors          </p>
+          
+          {/* Stats - Clean minimal design */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '30px',
+            maxWidth: '800px',
+            margin: '0 auto'
+          }}>
+            {[
+              { number: '50+', label: 'Certified Coaches' },
+              { number: '5K+', label: 'Consultations' },
+              { number: '4.8⭐', label: 'Avg Rating' }
+            ].map((stat, idx) => (
+              <div key={idx} style={{
+                background: 'rgba(255,255,255,0.15)',
+                backdropFilter: 'blur(10px)',
+                borderRadius: '16px',
+                padding: '32px 20px',
+                border: '1px solid rgba(255,255,255,0.25)',
+                transition: 'transform 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <div style={{ 
+                  fontSize: '2.5rem', 
+                  fontWeight: '800', 
+                  marginBottom: '8px',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}>
+                  {stat.number}
+                </div>
+                <div style={{ 
+                  fontSize: '0.95rem', 
+                  opacity: 0.95,
+                  fontWeight: '500'
+                }}>
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Categories Section - Clean cards */}
+      <section style={{ 
+        padding: '80px 20px',
+        background: '#fafafa'
+      }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          
+          <div style={{ textAlign: 'center', marginBottom: '60px' }}>
+            <h2 style={{
+              fontSize: 'clamp(2rem, 4vw, 2.8rem)',
+              fontWeight: '700',
+              color: '#111827',
+              marginBottom: '16px',
+              letterSpacing: '-0.01em'
+            }}>
+              Choose Your Wellness Coach
+            </h2>
+            <p style={{
+              fontSize: '1.15rem',
+              color: '#6b7280',
+              maxWidth: '600px',
+              margin: '0 auto'
+            }}>
+              Select a category and your health condition to connect with specialists
+            </p>
+          </div>
+          
+          <div style={{ 
+            display: 'grid', 
+            gap: '32px',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))'
+          }}>
+            {categories.map(category => (
+              <div 
+                key={category.id} 
+                style={{
+                  background: 'white',
+                  borderRadius: '24px',
+                  padding: '48px 36px',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.05)',
+                  border: '1px solid #e5e7eb',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-8px)';
+                  e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04)';
+                  e.currentTarget.style.borderColor = category.color;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.05)';
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                }}
+              >
+                {/* Top accent line */}
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '4px',
+                  background: category.color
+                }} />
+
+                {/* Icon & Title */}
+                <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                  <div style={{
+                    width: '90px',
+                    height: '90px',
+                    background: category.lightBg,
+                    borderRadius: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '3rem',
+                    margin: '0 auto 24px'
+                  }}>
+                    {category.icon}
+                  </div>
+                  
+                  <h3 style={{ 
+                    fontSize: '1.75rem', 
+                    fontWeight: '700',
+                    color: category.color,
+                    marginBottom: '8px',
+                    letterSpacing: '-0.01em'
+                  }}>
+                    {category.title}
+                  </h3>
+                  
+                  <p style={{ 
+                    fontSize: '1rem', 
+                    color: '#6b7280',
+                    fontWeight: '600',
+                    marginBottom: '12px'
+                  }}>
+                    {category.subtitle}
+                  </p>
+                  
+                  <p style={{ 
+                    fontSize: '0.95rem', 
+                    color: '#9ca3af',
+                    lineHeight: '1.6'
+                  }}>
+                    {category.description}
+                  </p>
+                </div>
+
+                {/* Conditions Pills */}
+                <div>
+                  <div style={{ 
+                    fontSize: '0.9rem', 
+                    fontWeight: '700',
+                    color: '#374151',
+                    marginBottom: '20px',
+                    textAlign: 'center',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em'
+                  }}>
+                    Available For
+                  </div>
+                  <div style={{ 
+                    display: 'flex', 
+                    flexWrap: 'wrap', 
+                    gap: '10px',
+                    justifyContent: 'center'
+                  }}>
+                    {conditions.map(condition => (
+                      <button
+                        key={condition.id}
+                        onClick={() => navigate(`/condition/${condition.id}/${category.id}`)}
+                        style={{
+                          padding: '10px 18px',
+                          border: `1.5px solid ${category.color}20`,
+                          borderRadius: '20px',
+                          background: 'white',
+                          color: category.color,
+                          fontSize: '0.9rem',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          whiteSpace: 'nowrap'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = category.color;
+                          e.currentTarget.style.color = 'white';
+                          e.currentTarget.style.borderColor = category.color;
+                          e.currentTarget.style.transform = 'translateY(-2px)';
+                          e.currentTarget.style.boxShadow = `0 4px 12px ${category.color}40`;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'white';
+                          e.currentTarget.style.color = category.color;
+                          e.currentTarget.style.borderColor = `${category.color}20`;
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        <span>{condition.icon}</span>
+                        <span>{condition.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Why Choose Section - Clean & Trustworthy */}
+      <section style={{
+        padding: '80px 20px',
+        background: 'white'
+      }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          
+          <div style={{ textAlign: 'center', marginBottom: '70px' }}>
+            <h2 style={{
+              fontSize: 'clamp(2rem, 4vw, 2.8rem)',
+              fontWeight: '700',
+              color: '#111827',
+              marginBottom: '16px',
+              letterSpacing: '-0.01em'
+            }}>
+              Why Choose HealthConsult?
+            </h2>
+            <p style={{
+              fontSize: '1.15rem',
+              color: '#6b7280',
+              maxWidth: '600px',
+              margin: '0 auto'
+            }}>
+              Your health and privacy are our top priorities
+            </p>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: '48px'
+          }}>
+            {[
+              {
+                icon: '🎓',
+                title: 'Certified Professionals',
+                desc: 'All coaches are licensed, experienced, and specialized in chronic disease management',
+                color: '#8b5cf6'
+              },
+              {
+                icon: '🔒',
+                title: 'Secure & Private',
+                desc: 'Your health data is encrypted and protected with industry-leading security standards',
+                color: '#06b6d4'
+              },
+              {
+                icon: '📅',
+                title: 'Flexible Scheduling',
+                desc: 'Book sessions at times that work for you, with easy rescheduling options',
+                color: '#10b981'
+              }
+            ].map((feature, idx) => (
+              <div key={idx} style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '84px',
+                  height: '84px',
+                  background: `${feature.color}15`,
+                  borderRadius: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 24px',
+                  fontSize: '2.5rem',
+                  border: `2px solid ${feature.color}30`
+                }}>
+                  {feature.icon}
+                </div>
+                <h3 style={{
+                  fontSize: '1.4rem',
+                  fontWeight: '700',
+                  color: '#111827',
+                  marginBottom: '12px',
+                  letterSpacing: '-0.01em'
+                }}>
+                  {feature.title}
+                </h3>
+                <p style={{
+                  fontSize: '1rem',
+                  color: '#6b7280',
+                  lineHeight: '1.7',
+                  maxWidth: '340px',
+                  margin: '0 auto'
+                }}>
+                  {feature.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer CTA */}
+      <section style={{
+        padding: '60px 20px',
+        background: '#f9fafb',
+        borderTop: '1px solid #e5e7eb'
+      }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+          <h3 style={{
+            fontSize: '1.8rem',
+            fontWeight: '700',
+            color: '#111827',
+            marginBottom: '16px'
+          }}>
+            Ready to Start Your Wellness Journey?
+          </h3>
+          <p style={{
+            fontSize: '1.05rem',
+            color: '#6b7280',
+            marginBottom: '32px',
+            lineHeight: '1.6'
+          }}>
+            Choose a coach above and connect with a certified professional today
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+};
 
 const DiseasePage = () => {
   const { diseaseId } = useParams();
@@ -1169,6 +1583,247 @@ const VideoCallPage = ({ user }) => {
     </div>
   );
 };
+const ProfessionalsPage = () => {
+  const { conditionId, professionalType } = useParams();
+  const [professionals, setProfessionals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  const conditionNames = {
+    'diabetes': { name: 'Diabetes', icon: '🩸' },
+    'hypertension': { name: 'Hypertension', icon: '❤️' },
+    'heart-disease': { name: 'Heart Disease', icon: '💔' },
+    'obesity': { name: 'Weight Management', icon: '⚖️' },
+    'arthritis': { name: 'Arthritis', icon: '🦴' },
+    'kidney-disease': { name: 'Kidney Disease', icon: '🫘' },
+    'thyroid': { name: 'Thyroid', icon: '🦋' }
+  };
+
+  const typeLabels = {
+    'nutritionist': { label: 'Nutritionists', icon: '🥗', color: '#10b981' },
+    'fitness': { label: 'Gym Trainers', icon: '💪', color: '#3b82f6' },
+    'yoga': { label: 'Yoga Instructors', icon: '🧘', color: '#8b5cf6' }
+  };
+
+  useEffect(() => {
+    fetchProfessionals();
+  }, [conditionId, professionalType]);
+
+  const fetchProfessionals = async () => {
+    try {
+      setLoading(true);
+      
+      // Use the working /coaches endpoint and filter by type
+      const response = await axios.get(`${API}/conditions/${conditionId}/coaches`);
+      
+      // Filter by professional type
+      const filtered = response.data.filter(
+        prof => prof.professional_type === professionalType
+      );
+      
+      setProfessionals(filtered);
+      
+    } catch (error) {
+      console.error('Error fetching professionals:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const condition = conditionNames[conditionId] || { name: conditionId, icon: '🏥' };
+  const typeInfo = typeLabels[professionalType] || { label: 'Professionals', icon: '👥', color: '#6b7280' };
+
+  if (loading) {
+    return <div className="loading">Loading professionals...</div>;
+  }
+
+  return (
+    <div className="professionals-page" style={{ padding: '40px 20px' }}>
+      <div className="container" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        
+        {/* Back Button */}
+        <button 
+          onClick={() => navigate('/')}
+          style={{
+            marginBottom: '30px',
+            padding: '10px 20px',
+            background: '#f3f4f6',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+        >
+          ← Back to Categories
+        </button>
+
+        {/* Header */}
+        <div style={{ marginBottom: '40px' }}>
+          <h1 style={{ 
+            fontSize: '2.5rem', 
+            marginBottom: '10px',
+            color: typeInfo.color
+          }}>
+            {typeInfo.icon} {typeInfo.label}
+          </h1>
+          <h2 style={{ 
+            fontSize: '1.5rem', 
+            color: '#6b7280',
+            fontWeight: '400'
+          }}>
+            for {condition.icon} {condition.name}
+          </h2>
+          <p style={{ 
+            marginTop: '10px',
+            fontSize: '1.1rem',
+            color: '#9ca3af'
+          }}>
+            {professionals.length} {typeInfo.label.toLowerCase()} available
+          </p>
+        </div>
+
+        {/* Professionals Grid */}
+        {professionals.length === 0 ? (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '60px 20px',
+            background: '#f9fafb',
+            borderRadius: '12px'
+          }}>
+            <p style={{ fontSize: '1.2rem', color: '#6b7280' }}>
+              No {typeInfo.label.toLowerCase()} available for this condition yet.
+            </p>
+            <button 
+              onClick={() => navigate('/')}
+              style={{
+                marginTop: '20px',
+                padding: '12px 24px',
+                background: typeInfo.color,
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '1rem'
+              }}
+            >
+              Browse Other Categories
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+            gap: '25px'
+          }}>
+            {professionals.map(professional => (
+              <div
+                key={professional.id}
+                style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '25px',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                  borderLeft: `4px solid ${typeInfo.color}`,
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s'
+                }}
+                onClick={() => navigate(`/chat/${professional.id}?disease=${conditionId}`)}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-3px)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                {/* Professional Header */}
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <img 
+                    src={professional.profile_image} 
+                    alt={professional.name}
+                    style={{
+                      width: '70px',
+                      height: '70px',
+                      borderRadius: '50%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                  <div>
+                    <h3 style={{ 
+                      fontSize: '1.3rem', 
+                      marginBottom: '5px',
+                      color: '#1f2937'
+                    }}>
+                      {professional.name}
+                    </h3>
+                    <p style={{ 
+                      fontSize: '0.9rem', 
+                      color: '#6b7280',
+                      marginBottom: '5px'
+                    }}>
+                      {professional.specialization}
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                   <span style={{ color: '#fbbf24' }}>⭐ {professional.rating}</span>
+                   <span style={{ color: '#9ca3af' }}>•</span>
+                    <span style={{ color: '#6b7280', fontSize: '0.9rem' }}>
+                     {professional.years_experience} years exp
+                     </span>
+                     <span style={{ color: '#9ca3af' }}>•</span>
+                    <span style={{ color: '#6b7280', fontSize: '0.9rem' }}>
+                    🌐 {professional.languages?.join(', ') || 'English'}
+                   </span>
+                   </div>
+                  </div>
+                </div>
+
+                {/* Bio */}
+                <p style={{ 
+                  fontSize: '0.95rem', 
+                  color: '#4b5563',
+                  lineHeight: '1.6',
+                  marginBottom: '15px'
+                }}>
+                  {professional.bio.substring(0, 120)}...
+                </p>
+
+                {/* Details */}
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingTop: '15px',
+                  borderTop: '1px solid #e5e7eb'
+                }}>
+                  <div>
+                    <p style={{ 
+                      fontSize: '1.2rem', 
+                      fontWeight: '600',
+                      color: typeInfo.color
+                    }}>
+                      ₹{professional.consultation_fee}
+                    </p>
+                    <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>
+                      per session
+                    </p>
+                  </div>
+                  <button style={{
+                    padding: '10px 20px',
+                    background: typeInfo.color,
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '0.95rem',
+                    fontWeight: '500'
+                  }}>
+                    Start Chat
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ============================================
 // PROFESSIONAL DASHBOARD
 // ============================================
@@ -2172,8 +2827,9 @@ function App() {
         <BrowserRouter>
           <Navbar user={user} setUser={setUser} />
           <main className="main-content">
-            <Routes>
-  <Route path="/" element={<HomePage />} />
+           <Routes>
+  <Route path="/" element={<CategorySelectionPage />} />
+  <Route path="/condition/:conditionId/:professionalType" element={<ProfessionalsPage />} />  {/* ADD THIS LINE */}
   <Route path="/auth" element={<AuthPage setUser={setUser} />} />
   <Route path="/disease/:diseaseId" element={<DiseasePage />} />
   <Route path="/chat/:professionalId" element={<ChatPage user={user} />} />
@@ -2185,6 +2841,7 @@ function App() {
   <Route path="/admin/dashboard" element={<AdminDashboard user={user} />} />
   <Route path="/professional/dashboard" element={<ProfessionalDashboard user={user} />} />
 </Routes>
+
           </main>
         </BrowserRouter>
       </div>

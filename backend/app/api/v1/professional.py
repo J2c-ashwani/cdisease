@@ -6,8 +6,10 @@ from datetime import datetime, timezone
 import logging
 import uuid 
 
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
 
 @router.get("/dashboard")
 async def get_professional_dashboard(
@@ -86,6 +88,70 @@ async def get_professional_appointments(
         logger.error(f"Error fetching appointments: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/appointments/{appointment_id}/chat-history")
+async def get_appointment_chat_history(
+    appointment_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """Get chat history for a specific appointment"""
+    try:
+        # Get appointment - EXCLUDE _id
+        appointment = await db.appointments.find_one(
+            {"id": appointment_id},
+            {"_id": 0}
+        )
+        if not appointment:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+        
+        # Verify professional owns this appointment - EXCLUDE _id
+        coach = await db.coaches.find_one(
+            {"user_id": current_user["id"]},
+            {"_id": 0}
+        )
+        if not coach or appointment["professional_id"] != coach["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        
+        # Get chat session for this appointment - EXCLUDE _id
+        session = await db.chat_sessions.find_one(
+            {
+                "coach_id": appointment["professional_id"],
+                "patient_id": appointment.get("patient_id")
+            },
+            {"_id": 0}
+        )
+        
+        if not session:
+            return {"messages": [], "session": None}
+        
+        # Get messages - Already has _id excluded
+        messages = await db.chat_messages.find(
+            {"session_id": session["id"]},
+            {"_id": 0}
+        ).sort("created_at", 1).to_list(length=1000)
+        
+        # Get patient info - Already has _id excluded
+        patient = await db.users.find_one(
+            {"id": appointment.get("patient_id")},
+            {"_id": 0, "password": 0}
+        )
+        
+        return {
+            "session": {
+                **session,
+                "patient": patient
+            },
+            "messages": messages
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching chat history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/fee-change-request")
 async def request_fee_change(
     request_data: dict,
@@ -152,4 +218,3 @@ async def get_my_fee_requests(
     except Exception as e:
         logger.error(f"Error fetching fee requests: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
