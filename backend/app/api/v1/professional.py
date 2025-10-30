@@ -3,13 +3,16 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime, timezone
+from pydantic import BaseModel
 import logging
 import uuid 
-
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+class FeeChangeRequest(BaseModel):
+    new_fee: float
+    reason: str = ""
 
 @router.get("/dashboard")
 async def get_professional_dashboard(
@@ -60,14 +63,13 @@ async def get_professional_dashboard(
                     "consultation_fee": apt.get("consultation_fee"),
                     "payment_status": apt.get("payment_status", "pending")
                 }
-                for apt in upcoming[:10]  # Only return next 10 upcoming
+                for apt in upcoming[:10]
             ]
         }
     
     except Exception as e:
         logger.error(f"Error fetching professional dashboard: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/appointments")
 async def get_professional_appointments(
@@ -88,7 +90,6 @@ async def get_professional_appointments(
         logger.error(f"Error fetching appointments: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/appointments/{appointment_id}/chat-history")
 async def get_appointment_chat_history(
     appointment_id: str,
@@ -97,7 +98,7 @@ async def get_appointment_chat_history(
 ):
     """Get chat history for a specific appointment"""
     try:
-        # Get appointment - EXCLUDE _id
+        # Get appointment
         appointment = await db.appointments.find_one(
             {"id": appointment_id},
             {"_id": 0}
@@ -105,7 +106,7 @@ async def get_appointment_chat_history(
         if not appointment:
             raise HTTPException(status_code=404, detail="Appointment not found")
         
-        # Verify professional owns this appointment - EXCLUDE _id
+        # Verify professional owns this appointment
         coach = await db.coaches.find_one(
             {"user_id": current_user["id"]},
             {"_id": 0}
@@ -113,36 +114,42 @@ async def get_appointment_chat_history(
         if not coach or appointment["professional_id"] != coach["id"]:
             raise HTTPException(status_code=403, detail="Not authorized")
         
-        # Get chat session for this appointment - EXCLUDE _id
+        # ✅ FIX: Get chat session using chat_session_id from appointment
+        if not appointment.get("chat_session_id"):
+            return {
+                "patient_name": "Patient",
+                "patient_email": "",
+                "created_at": appointment.get("created_at"),
+                "answers": []
+            }
+        
         session = await db.chat_sessions.find_one(
-            {
-                "coach_id": appointment["professional_id"],
-                "patient_id": appointment.get("patient_id")
-            },
+            {"id": appointment["chat_session_id"]},
             {"_id": 0}
         )
         
         if not session:
-            return {"messages": [], "session": None}
+            return {
+                "patient_name": "Patient",
+                "patient_email": "",
+                "created_at": appointment.get("created_at"),
+                "answers": []
+            }
         
-        # Get messages - Already has _id excluded
-        messages = await db.chat_messages.find(
-            {"session_id": session["id"]},
-            {"_id": 0}
-        ).sort("created_at", 1).to_list(length=1000)
-        
-        # Get patient info - Already has _id excluded
-        patient = await db.users.find_one(
-            {"id": appointment.get("patient_id")},
-            {"_id": 0, "password": 0}
-        )
+        # ✅ FIX: Convert answers dict to list format for frontend
+        answers_list = []
+        if session.get("answers"):
+            for question_id, answer in session["answers"].items():
+                answers_list.append({
+                    "question": question_id.replace("_", " ").title(),
+                    "answer": answer
+                })
         
         return {
-            "session": {
-                **session,
-                "patient": patient
-            },
-            "messages": messages
+            "patient_name": "Patient",
+            "patient_email": "",
+            "created_at": session.get("created_at"),
+            "answers": answers_list
         }
         
     except HTTPException:
@@ -151,10 +158,9 @@ async def get_appointment_chat_history(
         logger.error(f"Error fetching chat history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/fee-change-request")
 async def request_fee_change(
-    request_data: dict,
+    request_data: FeeChangeRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
@@ -166,17 +172,14 @@ async def request_fee_change(
         coach = await db.coaches.find_one({"user_id": professional_id})
         current_fee = coach.get("consultation_fee", 500)
         
-        new_fee = request_data.get("new_fee")
-        reason = request_data.get("reason", "")
-        
         # Create fee change request
         fee_request = {
             "id": str(uuid.uuid4()),
             "professional_id": professional_id,
             "professional_name": current_user.get("name"),
             "current_fee": current_fee,
-            "requested_fee": new_fee,
-            "reason": reason,
+            "requested_fee": request_data.new_fee,
+            "reason": request_data.reason,
             "status": "pending",
             "requested_at": datetime.now(timezone.utc).isoformat(),
             "reviewed_at": None,
@@ -186,7 +189,7 @@ async def request_fee_change(
         
         await db.fee_change_requests.insert_one(fee_request)
         
-        logger.info(f"Fee change request created: {professional_id} - {current_fee} → {new_fee}")
+        logger.info(f"Fee change request created: {professional_id} - {current_fee} → {request_data.new_fee}")
         
         return {
             "message": "Fee change request submitted successfully. Waiting for admin approval.",
@@ -197,7 +200,6 @@ async def request_fee_change(
     except Exception as e:
         logger.error(f"Error creating fee change request: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/fee-change-requests")
 async def get_my_fee_requests(

@@ -80,17 +80,17 @@ async def start_chat_session(
             await db.chat_questions.insert_many(questions)
         
         # Create chat session
-        session = {
+        appointment = {
             "id": str(uuid.uuid4()),
-            "user_id": current_user["id"],
-            "condition_id": disease_id,
-            "coach_id": professional_id,
-            "current_question_index": 0,
-            "total_questions": len(questions),
-            "answers": {},
-            "status": "active",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "patient_id": current_user["id"],
+            "professional_id": professional_id,
+            "disease_id": disease_id,
+            "chat_session_id": session_id,
+            "scheduled_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+            "status": "scheduled",
+            "consultation_fee": coach.get("consultation_fee", 500),
+            "payment_status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         
         await db.chat_sessions.insert_one(session)

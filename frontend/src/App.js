@@ -2055,7 +2055,7 @@ const ProfessionalDashboard = ({ user }) => {
                 <div className="patient-info">
                   <p><strong>Patient:</strong> {chatHistory.patient_name}</p>
                   <p><strong>Email:</strong> {chatHistory.patient_email}</p>
-                  <p><strong>Session Date:</strong> {new Date(chatHistory.started_at).toLocaleString()}</p>
+                  <p><strong>Session Date:</strong> {chatHistory.created_at ? new Date(chatHistory.created_at).toLocaleString() : 'N/A'}</p>
                 </div>
                 
                 <h3>Medical Questionnaire Responses</h3>
